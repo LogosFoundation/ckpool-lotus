@@ -567,6 +567,10 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 
 	ofs++; // Script length is filled in at the end @wb->coinb1bin[41];
 
+	char intro[] = "\x05logos";
+	memcpy(wb->coinb1bin + ofs, intro, sizeof(intro) - 1);
+	ofs += sizeof(intro) - 1;
+
 	/* Put block height at start of template */
 	len = ser_number(wb->coinb1bin + ofs, wb->height);
 	ofs += len;
@@ -597,7 +601,7 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	len += wb->enonce1varlen;
 	len += wb->enonce2varlen;
 
-	wb->coinb2bin = ckzalloc(512);
+	wb->coinb2bin = ckzalloc(1024);
 	memcpy(wb->coinb2bin, "\x0a\x63\x6b\x70\x6f\x6f\x6c", 7);
 	wb->coinb2len = 7;
 	if (ckp->btcsig) {
@@ -622,12 +626,9 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 
 	// Generation value
 	g64 = wb->coinbasevalue;
-	if (ckp->donvalid) {
-		d64 = g64 / 200; // 0.5% donation
-		g64 -= d64; // To guarantee integers add up to the original coinbasevalue
-		wb->coinb2bin[wb->coinb2len++] = 2 + wb->insert_witness;
-	} else
-		wb->coinb2bin[wb->coinb2len++] = 1 + wb->insert_witness;
+	d64 = g64 / 26; // coinbase divided into 26 share
+	g64 -= d64 * 13; // 13 shares go to miners
+	wb->coinb2bin[wb->coinb2len++] = 5 + wb->insert_witness;
 
 	u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
 	*u64 = htole64(g64);
@@ -649,14 +650,46 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 		wb->coinb2len += witnessdata_size;
 	}
 
-	if (ckp->donvalid) {
+	// Add miner fund outputs
+	{
 		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
 		*u64 = htole64(d64);
 		wb->coinb2len += 8;
 
-		wb->coinb2bin[wb->coinb2len++] = sdata->dontxnlen;
-		memcpy(wb->coinb2bin + wb->coinb2len, sdata->dontxnbin, sdata->dontxnlen);
-		wb->coinb2len += sdata->dontxnlen;
+		char output[] = "\xa9\x14\x26\x06\x17\xeb\xf6\x68\xc9\x10\x2f\x71\xce\x24\xab\xa9\x7f\xca\xaf\x9c\x66\x6a\x87";
+		wb->coinb2bin[wb->coinb2len++] = sizeof(output)-1;
+		memcpy(wb->coinb2bin + wb->coinb2len, output, sizeof(output)-1);
+		wb->coinb2len += sizeof(output)-1;
+	}
+	{
+		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
+		*u64 = htole64(d64);
+		wb->coinb2len += 8;
+
+		char output[] = "\x76\xa9\x14\x07\xd6\xf9\x5a\x81\x15\x5b\x7f\x70\x6d\x5b\xc8\x51\x06\xfb\xc7\x74\x09\xe3\x6e\x88\xac";
+		wb->coinb2bin[wb->coinb2len++] = sizeof(output)-1;
+		memcpy(wb->coinb2bin + wb->coinb2len, output, sizeof(output)-1);
+		wb->coinb2len += sizeof(output)-1;
+	}
+	{
+		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
+		*u64 = htole64(d64);
+		wb->coinb2len += 8;
+
+		char output[] = "\x76\xa9\x14\xba\x91\x13\xbb\xb9\xc6\x88\x0b\xb8\x77\xa2\x84\x29\x9f\x21\xd1\x33\x65\xe5\x28\x88\xac";
+		wb->coinb2bin[wb->coinb2len++] = sizeof(output)-1;
+		memcpy(wb->coinb2bin + wb->coinb2len, output, sizeof(output)-1);
+		wb->coinb2len += sizeof(output)-1;
+	}
+	{
+		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
+		*u64 = htole64(d64 * 10);
+		wb->coinb2len += 8;
+
+		char output[] = "\x6a\x1a\xc8\xe1\xf6\xe5\xa0\xed\xe5\xf2\xe3\xf9\xa0\xef\xee\xa0\xed\xe5\xac\xa0\xe1\xa0\xf3\xe9\xee\xee\xe5\xf2";
+		wb->coinb2bin[wb->coinb2len++] = sizeof(output)-1;
+		memcpy(wb->coinb2bin + wb->coinb2len, output, sizeof(output)-1);
+		wb->coinb2len += sizeof(output)-1;
 	}
 
 	wb->coinb2len += 4; // Blank lock
